@@ -14,7 +14,7 @@ export type CaseInput = {
     deviceId: string;
     occurredAt: number;
   };
-  customer: { fullName: string; externalRef: string; accountMasked: string; segment: string; kycTier: number; homeCity: string };
+  customer: { id: string; fullName: string; externalRef: string; accountMasked: string; segment: string; kycTier: number; homeCity: string };
   features: {
     priorCount?: number;
     priorDebitMedian?: number | null;

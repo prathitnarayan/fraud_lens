@@ -39,12 +39,14 @@ describe("access control", () => {
     expect(r.rows).toHaveLength(0);
   });
 
-  it("analyst reads alerts/customers but not fraud labels or audit log", async () => {
+  it("analyst reads alerts/customers, not fraud labels, and only alert history from the audit log (P4 policy)", async () => {
+    await db.query("insert into public.audit_log (action, entity_type, entity_id) values ('risk.run', 'ruleset', 'r1')");
     await as(db, "authenticated", analyst, async () => {
       expect((await db.query("select id from public.alerts")).rows.length).toBeGreaterThan(0);
       expect((await db.query("select id from public.customers")).rows.length).toBeGreaterThan(0);
       expect((await db.query("select * from public.fraud_labels")).rows).toHaveLength(0);
-      expect((await db.query("select * from public.audit_log")).rows).toHaveLength(0);
+      const types = (await db.query<{ entity_type: string }>("select distinct entity_type from public.audit_log")).rows;
+      expect(types.map((r) => r.entity_type)).toEqual(["alert"]);
     });
   });
 

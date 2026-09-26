@@ -30,7 +30,7 @@ function caseFor(transactionId: string): CaseInput {
       evidence: a.hits.map((h) => ({ code: h.code, pattern: h.pattern, weight: h.weight, text: h.evidence, via: h.via ?? null })),
     },
     txn: t,
-    customer: { fullName: c.fullName, externalRef: c.externalRef, accountMasked: c.accountMasked, segment: c.segment, kycTier: c.kycTier, homeCity: c.homeCity },
+    customer: { id: c.id, fullName: c.fullName, externalRef: c.externalRef, accountMasked: c.accountMasked, segment: c.segment, kycTier: c.kycTier, homeCity: c.homeCity },
     features: a.features,
     history,
   };

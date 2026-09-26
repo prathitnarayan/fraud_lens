@@ -31,7 +31,7 @@ describe("AI summary persistence against the real schema", () => {
     const ctx = buildCaseContext({
       alert: { id, riskScore: 90, severity: "critical", reasonCodes: ["STRUCTURING"], evidence: [{ code: "STRUCTURING", pattern: "STRUCTURING", weight: 60, text: "x", via: null }] },
       txn: { ...d.transactions[0] },
-      customer: { fullName: "A", externalRef: "SEED-1", accountMasked: "XXXX0000", segment: "retail", kycTier: 2, homeCity: "Pune" },
+      customer: { id: d.customers[0].id, fullName: "A", externalRef: "SEED-1", accountMasked: "XXXX0000", segment: "retail", kycTier: 2, homeCity: "Pune" },
       features: null,
       history: [],
     });

@@ -1,4 +1,6 @@
-# FraudLens — AI-assisted fraud alert triage
+# FraudLens — Don't just detect fraud. Reconstruct it.
+
+An evidence-first FraudOps workspace for Indian digital banking. It covers the whole path from a UPI/IMPS/card anomaly to a mule-network investigation, with deterministic detection, advisory AI and an auditable human decision.
 
 Next.js 16 · Supabase (Postgres + RLS + Auth + Realtime) · AI Pipe / OpenAI-compatible LLM · Vitest
 
@@ -9,8 +11,8 @@ Next.js 16 · Supabase (Postgres + RLS + Auth + Realtime) · AI Pipe / OpenAI-co
 | P1 | Deterministic synthetic data + planted fraud + look-alikes + idempotent seed | ✅ |
 | P2 | Deterministic risk engine (features → versioned rules → score) → idempotent alerts, analyst queue, eval | ✅ |
 | P3 | AI case summary: PII minimizer → AI Pipe → zod + grounding → deterministic fallback; alert detail page | ✅ |
-| P4 | Alert detail, decisions, Realtime feed, supervisor metrics, E2E | ⏳ |
-| P5 | Hardening, README, deck | ⏳ |
+| P4 | Investigation workspace: decisions, Decision Replay, money network, live feed, rule performance, E2E | ✅ |
+| P5 | Hardening: score-tie priority, loading/error states, automated security invariants, CI | ✅ |
 
 ## Setup
 1. `npm install` and `cp .env.example .env.local`, then fill the values in.
@@ -29,7 +31,7 @@ Next.js 16 · Supabase (Postgres + RLS + Auth + Realtime) · AI Pipe / OpenAI-co
    - `npm run seed -- --sql seed.sql`, then paste the file into the SQL editor or run `psql "$DATABASE_URL" -f seed.sql`.
    Optional flags: `--seed <int>`, `--anchor now` (makes the data look fresh), `--manifest manifest.json`.
    Re-running is safe: it only replaces rows tagged `SEED-*`.
-6. Run migration `20260926020000_risk_engine.sql`, then score the data. Either:
+6. Run migrations `…020000_risk_engine.sql`, `…030000_investigation.sql` and `…040000_alert_priority.sql`, then score the data. Either:
    - sign in as a supervisor and click **Run detection**, or
    - run `npm run risk -- --confirm-demo` (uses `.env.local` and prints the evaluation).
 7. `npm run dev` and open http://localhost:3000
@@ -112,6 +114,42 @@ P2 alert (score, severity, reason codes, evidence) + customer baseline + recent 
 - The detail page shows analysts a private legend (`person#1 = real handle`). It is never sent to the model.
 - Live test: `LLM_API_KEY=… npm run test:live`
 
+## Investigation workspace (P4)
+- **Decisions.** Available actions: claim, escalate, confirm fraud, false positive.
+  - Every action except claim needs a note of at least 10 characters.
+  - The server action runs as the signed-in user. The Postgres state machine is the source of truth, and its errors are mapped to plain messages.
+  - There's no service-role client in the decision path.
+- **Decision Replay** has four steps:
+  1. What happened: a timeline with cluster membership, which transaction completed which pattern, and new devices/cities.
+  2. Which rules fired.
+  3. The score arithmetic, re-derived from stored evidence (a warning shows if it doesn't reproduce the stored score).
+  4. What people did: the audit trail with actors and notes.
+- **Money network.** An SVG graph of either many customers paying one account (fan-in) or senders → mule → recipients (pass-through), within ±24h.
+- **Live queue.** Uses Supabase Realtime (RLS-filtered). Refreshes are debounced, so a detection run triggers one refresh.
+- **Rule performance** (`/metrics`, supervisors only): per-reason-code triggered, confirmed, false positive and precision, taken from analyst decisions. This feeds the learning loop.
+- **E2E:** `npm run test:e2e`. It needs the `E2E_*` users in `.env.local` and a first-time `npx playwright install chromium`.
+
+## Hardening (P5)
+- **Score ties.** `alerts.priority` is a generated column holding the uncapped evidence total. The queue sorts by score, then priority, then time. A test checks that the SQL and TypeScript maths match for every alert.
+- **Loading and error states.** Skeleton loaders and an error boundary that shows only a reference id (Next 16 `retry` API), plus a not-found page that doesn't reveal whether an alert exists.
+- **Security invariants as tests.** These also catch mistakes in future migrations or files:
+  - every public table has RLS;
+  - `anon` has no table privileges;
+  - `authenticated` can never delete or truncate, and can't insert into scoring tables;
+  - every SECURITY DEFINER function pins its `search_path`;
+  - the write-path RPC is callable by the service role only;
+  - client components never import secret modules;
+  - privileged modules are marked `server-only`;
+  - every server action checks auth first (verified by breaking one on purpose);
+  - only 3 non-secret `NEXT_PUBLIC_` variables exist;
+  - no hard-coded keys.
+- **CI** (`.github/workflows/ci.yml`): typecheck, lint with zero warnings, 174 tests, eval, build, `npm audit`.
+
+## Roadmap (not built)
+- **P5 Rule intelligence:** threshold backtesting, shadow-mode rules, versioned rollouts.
+- **P6 Adaptive:** statistical anomaly and graph features, then ML scoring alongside the rules.
+- **P7 Scale:** event streaming, feature store, model serving.
+
 ## Security model
 - RLS on every table. `anon` has no table grants.
 - Roles: `analyst` | `supervisor` | `admin`. A new user has no role until an admin assigns one.
@@ -134,6 +172,8 @@ P2 alert (score, severity, reason codes, evidence) + customer baseline + recent 
 7. **Re-running detection with a new ruleset doesn't update existing alerts.** This is on purpose, so an alert stays tied to the rules that raised it. `risk_assessments` always reflects the latest run.
 8. **No streaming.** The summary returns as one JSON object, typically 2–4s on nano, with a skeleton loader while waiting. Streaming the narrative would need an unvalidated text stream, which conflicts with schema validation, so it was skipped on purpose.
 9. **Grounding only checks the cited reason codes.** A model could still phrase a number wrongly inside the narrative. The rules-engine evidence is always shown next to the summary so the analyst can cross-check.
+10. **Analysts can now read the audit log, but only alert history** (P4). This is needed for Decision Replay. Other audit rows, such as detection runs, stay supervisor-only.
+11. **Alerts created before P4 have no cluster members in their evidence**, so their replay timeline shows only the alerted transaction and recent history. Re-seed and re-run detection to get the full clusters.
 5. **The SQL file is ~1 MB.** If the Supabase SQL editor rejects it, use the `DATABASE_URL` path or `psql`.
 6. **Without `DATABASE_SSL_CA`, the seed script encrypts the connection but doesn't verify the server certificate.** This only affects the demo seed.
 4. **`fraud_labels` holds ground truth for the synthetic data.** Only supervisors can see it. It exists to measure detection precision in the demo.

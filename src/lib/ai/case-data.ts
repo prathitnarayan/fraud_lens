@@ -75,6 +75,7 @@ export async function loadCase(db: SupabaseClient, alertId: string): Promise<Cas
       alert: { id: row.id, riskScore: row.risk_score, severity: row.severity, reasonCodes: row.reason_codes, evidence: row.evidence ?? [] },
       txn,
       customer: {
+        id: row.customers.id,
         fullName: row.customers.full_name,
         externalRef: row.customers.external_ref,
         accountMasked: row.customers.account_masked,

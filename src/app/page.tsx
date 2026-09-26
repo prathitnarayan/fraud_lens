@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
+import { LiveRefresh } from "@/components/live-refresh";
 import { RunDetectionButton } from "@/components/run-detection-button";
 import { isSupervisor, requireStaff } from "@/lib/auth";
 import { loadCounts, loadEvaluation, loadQueue, parseTab, QUEUE_TABS, type QueueRow, type QueueTab } from "@/lib/queue";
@@ -66,6 +67,11 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
           </section>
         )}
 
+        <div className="flex items-center justify-between">
+          <h1 className="text-lg font-semibold">Alert queue</h1>
+          <LiveRefresh />
+        </div>
+
         <nav className="flex gap-1 border-b border-neutral-200 text-sm" aria-label="Alert status">
           {(Object.keys(QUEUE_TABS) as QueueTab[]).map((t) => (
             <Link
@@ -88,7 +94,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
             <table className="w-full text-left text-sm">
               <thead className="border-b border-neutral-200 text-xs uppercase text-neutral-500">
                 <tr>
-                  <th className="py-2 pr-3">Score</th>
+                  <th className="py-2 pr-3" title="Ties at the same score are ordered by total evidence weight">Score</th>
                   <th className="py-2 pr-3">Customer</th>
                   <th className="py-2 pr-3 text-right">Amount</th>
                   <th className="py-2 pr-3">Channel · City</th>
@@ -101,7 +107,10 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
                 {rows.map((r) => (
                   <tr key={r.id} className="border-b border-neutral-100 align-top">
                     <td className="py-2 pr-3">
-                      <span className={`inline-block min-w-12 rounded px-2 py-0.5 text-center text-xs font-semibold tabular-nums ${SEVERITY_STYLE[r.severity]}`}>
+                      <span
+                        title={r.priority !== null && r.priority > r.risk_score ? `Evidence total ${r.priority} (score capped at 100)` : undefined}
+                        className={`inline-block min-w-12 rounded px-2 py-0.5 text-center text-xs font-semibold tabular-nums ${SEVERITY_STYLE[r.severity]}`}
+                      >
                         {r.risk_score}
                       </span>
                       <div className="mt-1 text-[11px] uppercase text-neutral-500">{r.severity}</div>

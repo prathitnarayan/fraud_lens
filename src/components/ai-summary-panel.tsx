@@ -22,7 +22,7 @@ export function AiSummaryPanel({ alertId, initial }: { alertId: string; initial:
     <section className="rounded border border-neutral-300 p-4" aria-busy={busy}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-sm font-semibold">AI case summary</h2>
+          <h2 className="text-sm font-semibold">AI investigation brief</h2>
           <p className="text-xs text-neutral-500">Advisory only · cannot change score, reasons or your decision</p>
         </div>
         <div className="flex items-center gap-2">

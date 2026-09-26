@@ -43,7 +43,14 @@ export function toApplyRows(assessments: Assessment[]) {
     severity: a.severity,
     alert: a.alert,
     reason_codes: a.reasonCodes,
-    evidence: a.hits.map((h) => ({ code: h.code, pattern: h.pattern, weight: h.weight, text: h.evidence, via: h.via ?? null })),
+    evidence: a.hits.map((h) => ({
+      code: h.code,
+      pattern: h.pattern,
+      weight: h.weight,
+      text: h.evidence,
+      via: h.via ?? null,
+      members: h.members ?? [],
+    })),
     features: a.features,
     ruleset_version: a.rulesetVersion,
   }));

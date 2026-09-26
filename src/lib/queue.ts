@@ -24,6 +24,7 @@ export function parseTab(v: string | string[] | undefined): QueueTab {
 export type QueueRow = {
   id: string;
   risk_score: number;
+  priority: number | null;
   severity: "low" | "medium" | "high" | "critical";
   reason_codes: string[];
   evidence: EvidenceItem[];
@@ -38,12 +39,13 @@ export async function loadQueue(db: SupabaseClient, tab: QueueTab): Promise<Queu
   const { data, error } = await db
     .from("alerts")
     .select(
-      "id, risk_score, severity, reason_codes, evidence, status, created_at, " +
+      "id, risk_score, priority, severity, reason_codes, evidence, status, created_at, " +
         "transactions(amount, channel, direction, counterparty, city, occurred_at), " +
         "customers(full_name, account_masked, external_ref)",
     )
     .in("status", [...QUEUE_TABS[tab]])
     .order("risk_score", { ascending: false })
+    .order("priority", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(200);
   if (error) throw new Error(`load queue: ${error.message}`);

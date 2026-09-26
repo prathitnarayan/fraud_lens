@@ -2,9 +2,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AiSummaryPanel } from "@/components/ai-summary-panel";
 import { AppHeader } from "@/components/app-header";
+import { DecisionPanel } from "@/components/decision-panel";
+import { DecisionReplay } from "@/components/decision-replay";
+import { NetworkGraph } from "@/components/network-graph";
+import { ACTION_LABELS } from "@/lib/ai/schema";
+import { availableDecisions } from "@/lib/decisions";
+import { loadInvestigation } from "@/lib/investigation";
 import { loadCase } from "@/lib/ai/case-data";
 import { buildCaseContext, Pseudonymizer } from "@/lib/ai/minimize";
-import { requireStaff } from "@/lib/auth";
+import { isSupervisor, requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 const inr = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
@@ -36,8 +42,16 @@ function Facts({ rows }: { rows: [string, React.ReactNode][] }) {
 export default async function AlertPage({ params }: { params: Promise<{ id: string }> }) {
   const viewer = await requireStaff();
   const { id } = await params;
-  const view = await loadCase(await createClient(), id);
+  const db = await createClient();
+  const view = await loadCase(db, id);
   if (!view) notFound();
+  const investigation = await loadInvestigation(db, view, viewer.id);
+  const availability = availableDecisions(view.status, {
+    isSupervisor: isSupervisor(viewer.role),
+    assignedTo: view.assignedTo,
+    viewerId: viewer.id,
+  });
+  const aiAction = view.aiRecord ? ACTION_LABELS[view.aiRecord.summary.suggested_action] : null;
 
   const { input } = view;
   const t = input.txn;
@@ -107,6 +121,13 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
           </div>
 
           <div className="space-y-4">
+            <DecisionPanel
+              alertId={input.alert.id}
+              status={view.status}
+              availability={availability}
+              resolutionNote={view.resolutionNote}
+              aiSuggestion={aiAction}
+            />
             <AiSummaryPanel alertId={input.alert.id} initial={view.aiRecord} />
             {legend.length > 0 && (
               <details className="rounded border border-neutral-200 p-3 text-xs">
@@ -119,28 +140,21 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
           </div>
         </div>
 
-        <Card title="Recent activity" subtitle="12 most recent transactions before this one">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="text-neutral-500">
-                <tr><th className="py-1 pr-3">When</th><th className="pr-3 text-right">Amount</th><th className="pr-3">Dir</th><th className="pr-3">Channel</th><th className="pr-3">City</th><th className="pr-3">Counterparty</th><th>Device</th></tr>
-              </thead>
-              <tbody>
-                {input.history.map((h) => (
-                  <tr key={h.id} className="border-t border-neutral-100">
-                    <td className="py-1 pr-3 whitespace-nowrap">{when.format(h.occurredAt)}</td>
-                    <td className="pr-3 text-right tabular-nums">{inr.format(h.amount)}</td>
-                    <td className="pr-3">{h.direction}</td>
-                    <td className="pr-3">{h.channel}</td>
-                    <td className="pr-3">{h.city}</td>
-                    <td className="max-w-56 truncate pr-3" title={h.counterparty}>{h.counterparty}</td>
-                    <td className={h.deviceId === t.deviceId ? "" : "text-neutral-400"}>{h.deviceId}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+        {investigation.network && (
+          <Card title="Money network" subtitle="Who else is connected to this money movement (±24h, person-to-person only)">
+            <NetworkGraph net={investigation.network} />
+          </Card>
+        )}
+
+        <DecisionReplay
+          timeline={investigation.timeline}
+          evidence={input.alert.evidence}
+          score={input.alert.riskScore}
+          severity={input.alert.severity}
+          rulesetVersion={view.rulesetVersion}
+          createdAt={view.createdAt}
+          trail={investigation.trail}
+        />
       </main>
     </div>
   );

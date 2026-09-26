@@ -10,11 +10,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run typecheck && npm run lint && npm run test",
-    "seed": "tsx scripts/seed/seed.ts",
+    "check": "npm run typecheck && eslint . --max-warnings 0 && npm run test",
+    "seed": "tsx --env-file-if-exists=.env.local scripts/seed/seed.ts",
     "eval": "tsx scripts/risk/eval.ts",
     "risk": "tsx --env-file=.env.local scripts/risk/run.ts",
-    "test:live": "node --env-file=.env.local node_modules/vitest/vitest.mjs run tests/unit/ai.test.ts -t \"live AI Pipe\""
+    "test:live": "node --env-file=.env.local node_modules/vitest/vitest.mjs run tests/unit/ai.test.ts -t \"live AI Pipe\"",
+    "test:e2e": "node --env-file=.env.local node_modules/@playwright/test/cli.js test"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22.20.4",
     "@types/pg": "^8.23.1",

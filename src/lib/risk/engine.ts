@@ -37,7 +37,7 @@ export function assessTransactions(input: readonly TxnInput[]): Assessment[] {
 
   for (const { t, hits } of work.values()) {
     for (const hit of hits.values()) {
-      if (!hit.members || hit.via) continue;
+      if (!hit.members || hit.via !== undefined) continue;
       for (const memberId of hit.members) {
         if (memberId === t.id) continue;
         const target = work.get(memberId);
@@ -48,6 +48,7 @@ export function assessTransactions(input: readonly TxnInput[]): Assessment[] {
           weight: hit.weight,
           evidence: `${hit.evidence} — part of a cluster completed at ${new Date(t.occurredAt).toISOString()}`,
           via: t.id,
+          members: hit.members,
         });
       }
     }
@@ -56,7 +57,7 @@ export function assessTransactions(input: readonly TxnInput[]): Assessment[] {
   return sorted.map((t) => {
     const { features, hits } = work.get(t.id)!;
     const ordered = [...hits.values()]
-      .map(({ members: _members, ...h }) => h)
+      .map((h) => (h.members ? { ...h, members: [...new Set([...h.members, t.id])].sort() } : h))
       .sort((a, b) => b.weight - a.weight || a.code.localeCompare(b.code));
     const score = scoreHits(ordered);
     return {
