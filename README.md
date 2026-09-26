@@ -50,3 +50,4 @@ on PGlite (Postgres in WASM) with Supabase auth stubs, so no Supabase project is
 3. **AI Pipe free tier is about $0.10/week.** AI summaries are cached per alert, and the app falls back to a template summary when the LLM is unavailable (`LLM_PROVIDER=none` also works).
 4. **`fraud_labels` holds ground truth for the synthetic data.** Only supervisors can see it. It exists to measure detection precision in the demo.
 # fraud_lens
+# fraud_lens
