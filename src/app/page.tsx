@@ -107,7 +107,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
                       <div className="mt-1 text-[11px] uppercase text-neutral-500">{r.severity}</div>
                     </td>
                     <td className="py-2 pr-3">
-                      <div className="font-medium">{r.customers?.full_name ?? "—"}</div>
+                      <Link href={`/alerts/${r.id}`} className="font-medium underline-offset-2 hover:underline">{r.customers?.full_name ?? "—"}</Link>
                       <div className="text-xs text-neutral-500">
                         {r.customers?.external_ref} · {r.customers?.account_masked}
                       </div>

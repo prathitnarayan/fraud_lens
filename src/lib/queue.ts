@@ -2,6 +2,9 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { evaluateFromCount, type Confusion } from "@/lib/risk/evaluate";
 import { selectAll } from "@/lib/risk/runner";
+import type { EvidenceItem } from "@/lib/queue-types";
+
+export type { EvidenceItem };
 
 export const QUEUE_TABS = {
   open: ["open"],
@@ -17,7 +20,6 @@ export function parseTab(v: string | string[] | undefined): QueueTab {
   return s && Object.prototype.hasOwnProperty.call(QUEUE_TABS, s) ? (s as QueueTab) : "open";
 }
 
-export type EvidenceItem = { code: string; pattern: string | null; weight: number; text: string; via: string | null };
 
 export type QueueRow = {
   id: string;

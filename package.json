@@ -13,7 +13,8 @@
     "check": "npm run typecheck && npm run lint && npm run test",
     "seed": "tsx scripts/seed/seed.ts",
     "eval": "tsx scripts/risk/eval.ts",
-    "risk": "tsx --env-file=.env.local scripts/risk/run.ts"
+    "risk": "tsx --env-file=.env.local scripts/risk/run.ts",
+    "test:live": "node --env-file=.env.local node_modules/vitest/vitest.mjs run tests/unit/ai.test.ts -t \"live AI Pipe\""
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

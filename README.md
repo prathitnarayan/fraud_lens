@@ -8,7 +8,7 @@ Next.js 16 · Supabase (Postgres + RLS + Auth + Realtime) · AI Pipe / OpenAI-co
 | P0 | Scaffold, schema, RLS, alert state machine, append-only audit, auth, LLM client, security headers | ✅ |
 | P1 | Deterministic synthetic data + planted fraud + look-alikes + idempotent seed | ✅ |
 | P2 | Deterministic risk engine (features → versioned rules → score) → idempotent alerts, analyst queue, eval | ✅ |
-| P3 | AI case summary (PII-masked, cached, template fallback) | ⏳ |
+| P3 | AI case summary: PII minimizer → AI Pipe → zod + grounding → deterministic fallback; alert detail page | ✅ |
 | P4 | Alert detail, decisions, Realtime feed, supervisor metrics, E2E | ⏳ |
 | P5 | Hardening, README, deck | ⏳ |
 
@@ -89,6 +89,29 @@ TP 115 · FP 0 · TN 4,885 · FN 0 · Precision 100.0% · Recall 100.0% · Alert
 ⚠️ **Read this number correctly.** The rules and the generator share the same pattern definitions, so 100% proves the engine is *correct* on known behaviours, not that it's *accurate* in the real world.
 The meaningful part is that all 16 innocent look-alikes score between 0 and 35 and stay below the alert line. Real data would produce false positives, which is where the analyst workflow (P3/P4) earns its keep.
 
+## AI case summary (P3) — advisory only
+```
+P2 alert (score, severity, reason codes, evidence) + customer baseline + recent activity
+  → PII minimizer   (names, refs, account, UPI handles, device ids, UUIDs removed; people/devices → person#N / device#N)
+  → context builder (JSON: amounts, cities, IST times, categories, evidence text scrubbed)
+  → AI Pipe          (openai/gpt-4.1-nano, JSON mode, 12s timeout, 1 retry)
+  → zod schema       (unknown keys stripped: a model returning risk_score is ignored)
+  → grounding check  (cited reason codes must be ones the engine produced)
+  → valid ? AI summary : deterministic playbook summary (per-pattern action, questions, benign explanations)
+  → analyst
+```
+
+**Enforced boundaries**
+- The AI can only write `ai_summary`, `ai_model` and `ai_generated_at`. This is enforced three ways:
+  - `buildAiUpdate` builds the update from those columns only;
+  - a unit test checks the keys;
+  - a DB test shows that score, severity, reason codes, evidence, status and notes are unchanged after an AI write.
+- The suggested action comes from a fixed list of workflow steps. None of them is a verdict.
+- A summary is cached per alert once the LLM succeeds. **Regenerate** is rate-limited to 6 per minute per user. Every generation is audited, with metadata only (no summary text in the audit log).
+- Access is checked by reading the alert through RLS as the user. The service role is used only to write the `ai_*` columns.
+- The detail page shows analysts a private legend (`person#1 = real handle`). It is never sent to the model.
+- Live test: `LLM_API_KEY=… npm run test:live`
+
 ## Security model
 - RLS on every table. `anon` has no table grants.
 - Roles: `analyst` | `supervisor` | `admin`. A new user has no role until an admin assigns one.
@@ -109,6 +132,8 @@ The meaningful part is that all 16 innocent look-alikes score between 0 and 35 a
 2. **Login rate limiter is in-memory**, so it only works per instance. Use Redis or Upstash when running multiple instances. Supabase Auth has its own server-side limits as a backstop.
 3. **AI Pipe free tier is about $0.10/week.** AI summaries are cached per alert, and the app falls back to a template summary when the LLM is unavailable (`LLM_PROVIDER=none` also works).
 7. **Re-running detection with a new ruleset doesn't update existing alerts.** This is on purpose, so an alert stays tied to the rules that raised it. `risk_assessments` always reflects the latest run.
+8. **No streaming.** The summary returns as one JSON object, typically 2–4s on nano, with a skeleton loader while waiting. Streaming the narrative would need an unvalidated text stream, which conflicts with schema validation, so it was skipped on purpose.
+9. **Grounding only checks the cited reason codes.** A model could still phrase a number wrongly inside the narrative. The rules-engine evidence is always shown next to the summary so the analyst can cross-check.
 5. **The SQL file is ~1 MB.** If the Supabase SQL editor rejects it, use the `DATABASE_URL` path or `psql`.
 6. **Without `DATABASE_SSL_CA`, the seed script encrypts the connection but doesn't verify the server certificate.** This only affects the demo seed.
 4. **`fraud_labels` holds ground truth for the synthetic data.** Only supervisors can see it. It exists to measure detection precision in the demo.
