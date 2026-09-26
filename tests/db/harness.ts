@@ -85,7 +85,7 @@ export async function seedAlert(db: PGlite): Promise<{ alertId: string; txnId: s
      values ($1, 95000, 'UPI', 'debit', 'mule@upi', 'Delhi', 'dev-new', now()) returning id`,
     [c.rows[0].id],
   );
-  await db.query("insert into public.fraud_labels (transaction_id, pattern) values ($1, 'new_device_high_value')", [
+  await db.query("insert into public.fraud_labels (transaction_id, pattern) values ($1, 'NEW_DEVICE_HIGH_VALUE')", [
     t.rows[0].id,
   ]);
   const a = await db.query<{ id: string }>(

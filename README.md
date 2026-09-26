@@ -6,7 +6,7 @@ Next.js 16 · Supabase (Postgres + RLS + Auth + Realtime) · AI Pipe / OpenAI-co
 | Phase | Scope | Status |
 |---|---|---|
 | P0 | Scaffold, schema, RLS, alert state machine, append-only audit, auth, LLM client, security headers | ✅ |
-| P1 | Synthetic data generator + seed (planted fraud patterns) | ⏳ |
+| P1 | Deterministic synthetic data + planted fraud + look-alikes + idempotent seed | ✅ |
 | P2 | Risk engine (rules + customer baseline) → alerts, analyst queue | ⏳ |
 | P3 | AI case summary (PII-masked, cached, template fallback) | ⏳ |
 | P4 | Alert detail, decisions, Realtime feed, supervisor metrics, E2E | ⏳ |
@@ -23,11 +23,41 @@ Next.js 16 · Supabase (Postgres + RLS + Auth + Realtime) · AI Pipe / OpenAI-co
    update public.profiles set role = 'analyst'    where id = (select id from auth.users where email = 'analyst@bank.test');
    update public.profiles set role = 'supervisor' where id = (select id from auth.users where email = 'lead@bank.test');
    ```
-5. `npm run dev` and open http://localhost:3000
+5. Load demo data. Pick one of these:
+   - `DATABASE_URL=… npm run seed -- --confirm-demo`
+     Runs in one transaction and rolls back fully if anything fails.
+   - `npm run seed -- --sql seed.sql`, then paste the file into the SQL editor or run `psql "$DATABASE_URL" -f seed.sql`.
+   Optional flags: `--seed <int>`, `--anchor now` (makes the data look fresh), `--manifest manifest.json`.
+   Re-running is safe: it only replaces rows tagged `SEED-*`.
+6. `npm run dev` and open http://localhost:3000
 
 ## Tests
 `npm run check` runs typecheck, lint, and all tests. The RLS tests run the real migration
 on PGlite (Postgres in WASM) with Supabase auth stubs, so no Supabase project is needed.
+
+## Demo data (P1)
+- The same seed always produces the same data (seeded random generator, IDs derived from the seed, fixed anchor time).
+- 200 customers and 5,000 transactions over 30 days. About 2.3% are planted fraud.
+- Pipeline: `scripts/seed/`
+  1. Generate customers.
+  2. Plant the fraud scenarios and their look-alikes (`scenarios/*`).
+  3. Fill the rest with ordinary baseline activity.
+  4. Build the manifest.
+  5. Emit SQL.
+
+| Pattern | Planted fraud | Innocent look-alike |
+|---|---|---|
+| VELOCITY_BURST | 6–9 gift-card debits within 5 min, at night | 5 small cab top-ups; a busy MSME day |
+| NEW_DEVICE_HIGH_VALUE | First-ever device + ₹60k–5L to a new payee | New phone with normal spend; big payment to a known payee |
+| GEO_MISMATCH | Home txn, then card use 800+ km away minutes later | Real traveller (plausible flight speed) |
+| MULE_FAN_IN | 6–8 customers pay one external handle within 6h; mule gets 5–7 credits | Payroll credits; MSME sales collections |
+| MULE_FAN_OUT | Mule sends money to 4–6 new accounts within ~1h | Supplier payments the next day |
+| STRUCTURING | 4–6 debits of ₹45.5k–49.9k within 24h | One payment just under ₹50k; two invoices 26h apart |
+
+Ground truth lives only in `fraud_labels` (supervisor-only), with a `scenario_ref` column.
+The tests use independent "oracle" detectors to prove two things:
+- every planted case matches its pattern;
+- **no unlabelled transaction matches any pattern**, checked across 3 seeds.
 
 ## Security model
 - RLS on every table. `anon` has no table grants.
@@ -48,6 +78,6 @@ on PGlite (Postgres in WASM) with Supabase auth stubs, so no Supabase project is
 1. **CSP uses `'unsafe-inline'` for scripts.** Next.js needs this for its inline bootstrap when nonces aren't used. A nonce-based CSP would force every page to render dynamically. This is acceptable for the prototype; switch to nonces for production.
 2. **Login rate limiter is in-memory**, so it only works per instance. Use Redis or Upstash when running multiple instances. Supabase Auth has its own server-side limits as a backstop.
 3. **AI Pipe free tier is about $0.10/week.** AI summaries are cached per alert, and the app falls back to a template summary when the LLM is unavailable (`LLM_PROVIDER=none` also works).
+5. **The SQL file is ~1 MB.** If the Supabase SQL editor rejects it, use the `DATABASE_URL` path or `psql`.
+6. **Without `DATABASE_SSL_CA`, the seed script encrypts the connection but doesn't verify the server certificate.** This only affects the demo seed.
 4. **`fraud_labels` holds ground truth for the synthetic data.** Only supervisors can see it. It exists to measure detection precision in the demo.
-# fraud_lens
-# fraud_lens
