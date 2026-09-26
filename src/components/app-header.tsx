@@ -8,6 +8,7 @@ export function AppHeader({ viewer }: { viewer: Viewer }) {
       <nav className="flex items-center gap-4 text-sm">
         <Link href="/" className="font-semibold">FraudLens</Link>
         <Link href="/" className="text-neutral-600 hover:text-neutral-900">Queue</Link>
+        <Link href="/precheck" className="text-neutral-600 hover:text-neutral-900">Payment check</Link>
         {(viewer.role === "supervisor" || viewer.role === "admin") && (
           <Link href="/metrics" className="text-neutral-600 hover:text-neutral-900">Rule performance</Link>
         )}

@@ -31,7 +31,8 @@ describe("secret boundaries (static)", () => {
 
   it("the service-role client is only used from server actions or server-only modules", () => {
     for (const f of files.filter((x) => x.text.includes("@/lib/supabase/admin"))) {
-      expect(isServerAction(f.text) || /^import "server-only";/m.test(f.text), f.path).toBe(true);
+      const isRouteHandler = /^src\/app\/api\/.+\/route\.ts$/.test(f.path);
+      expect(isServerAction(f.text) || isRouteHandler || /^import "server-only";/m.test(f.text), f.path).toBe(true);
     }
   });
 
@@ -44,6 +45,18 @@ describe("secret boundaries (static)", () => {
         if (name === "login" || name === "logout") continue;
         expect(/getViewer\(\)|requireStaff\(\)/.test(body), `${f.path}:${name} lacks an auth check`).toBe(true);
       }
+    }
+  });
+
+  it("every API route authenticates before doing work", () => {
+    const routes = files.filter((x) => /^src\/app\/api\/.+\/route\.ts$/.test(x.path));
+    expect(routes.length).toBeGreaterThanOrEqual(1);
+    for (const r of routes) {
+      const body = r.text.slice(r.text.indexOf("export async function"));
+      const authAt = Math.min(...["apiKeyMatches(", "getViewer("].map((k) => body.indexOf(k)).filter((i) => i >= 0));
+      const workAt = Math.min(...["createAdminClient(", "createClient(", "req.json("].map((k) => body.indexOf(k)).filter((i) => i >= 0));
+      expect(Number.isFinite(authAt) && authAt < workAt, `${r.path} must authenticate first`).toBe(true);
+      expect(r.text, r.path).toMatch(/status: 401/);
     }
   });
 

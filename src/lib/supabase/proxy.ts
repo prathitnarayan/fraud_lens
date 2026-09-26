@@ -30,7 +30,9 @@ export async function updateSession(request: NextRequest) {
   const signedIn = Boolean(data?.claims?.sub);
   const { pathname } = request.nextUrl;
 
-  if (!signedIn && !isPublicPath(pathname)) {
+  // Machine-to-machine API calls carry a bearer key; the route handler verifies it (constant-time).
+  const machineCall = pathname.startsWith("/api/v1/") && request.headers.get("authorization")?.startsWith("Bearer ");
+  if (!signedIn && !machineCall && !isPublicPath(pathname)) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }

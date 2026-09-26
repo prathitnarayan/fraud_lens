@@ -168,12 +168,74 @@ The fraudster changes the story; the money trail reveals the pattern. Three expl
 - agreement on alerts: 40 HIGH, 75 MIXED;
 - 22 model-only candidates.
 
+## Pre-transaction check (P7) — before money moves
+The same point-in-time engine scores a **proposed** payment against 30 days of the customer's history and the beneficiary's history. It returns in milliseconds.
+
+```
+POST /api/v1/precheck        Authorization: Bearer $PRECHECK_API_KEY   (or a staff session)
+{ "customerRef": "SEED-00143", "amount": 200000, "channel": "IMPS",
+  "counterparty": "new.person@ibl", "merchantCategory": null, "city": "Hyderabad", "deviceId": "dev-unknown" }
+→ { "decision": "HOLD", "ruleScore": 100, "reasonCodes": [...], "models": {...},
+    "policyReasons": [...], "customerMessage": "This is a large payment from a new device…", "latencyMs": 4.1 }
+```
+
+| Decision | When | What the customer experiences |
+|---|---|---|
+| **HOLD** | rules ≥ 70, or rules ≥ 50 with HIGH agreement | Payment paused, fraud team calls |
+| **STEP_UP** | rules ≥ 50, or any model ≥ 60 | Re-authenticate, call-back or cooling-off |
+| **WARN** | beneficiary model ≥ 40, or unusual amount | Scam warning, can continue |
+| **ALLOW** | nothing fires | Normal |
+
+- **Only the rules can HOLD. Models only add friction**, so they stay advisory. A test proves this, and a mutation test confirmed it catches the change.
+- A test confirms precheck and the batch engine give **the same score** for the same payment (one engine, two modes).
+- The check is **stateless**: it stores no transaction. Every decision is audited (`precheck.decision`, visible to supervisors).
+- API-key auth uses a constant-time compare, and key auth is disabled if `PRECHECK_API_KEY` is unset or shorter than 24 characters. Rate-limited, and a static test checks that every API route authenticates before doing any work.
+- **Simulator:** `/precheck` has presets built from live data: a normal grocery payment, a SIM swap sending ₹2L from a new phone, and paying the account that many customers paid today.
+
+## Payment-rail limits (P9) — checked before fraud scoring
+`src/lib/limits.ts` records who sets each limit (checked 26 Sep 2026):
+
+| Limit | Value | Set by |
+|---|---|---|
+| UPI P2P per transaction | ₹1,00,000 | NPCI |
+| UPI P2P rolling 24h | ₹1,00,000 | NPCI |
+| UPI in the first 24h of a new registration (a new device is treated the same) | ₹5,000 | NPCI (device re-registration: bank-policy interpretation) |
+| UPI P2M, verified merchants (capital markets, insurance, travel, loans, card bills ₹5L; jewellery ₹2L) | per category | NPCI (effective 15 Sep 2025) |
+| UPI transactions per 24h | 20 | Bank (configurable) |
+| IMPS per transaction | ₹5,00,000 | Bank (configurable) |
+| ATM withdrawal per day | ₹50,000 | Bank (configurable) |
+
+Any breach returns **DECLINE**, with the exact limit and its source, before the fraud policy runs. Fraud scores are still returned for the audit trail.
+
+Example: a victim sending 9 × ₹18,000 by UPI to new accounts is declined by the NPCI rolling cap. The same pattern over IMPS stays within limits, and the network model steps it up instead. Both cases are tested.
+
+RBI's **e-mandate framework** (April 2026: recurring debits without OTP up to ₹15,000, or ₹1L for insurance, mutual funds and card bills; 24-hour pre-debit notice) is noted for the roadmap. Recurring mandates aren't in the demo data.
+
+## RBI regulatory mapping (P8)
+Checked on 26 Sep 2026. The rules are encoded as data in `src/lib/compliance.ts`, so they can be updated when drafts become final.
+
+| RBI instrument | Status | FraudLens implementation |
+|---|---|---|
+| Authentication Mechanisms for Digital Payment Transactions Directions, 2025 (2FA with a dynamic factor; risk-based checks on suspicious transactions) | **In force 1 Apr 2026** | Pre-transaction **STEP_UP** is the risk-based additional authentication |
+| Master Directions on Fraud Risk Management (Jul 2024): Early Warning Signals, red-flagging | **In force** | Alerts are the EWS layer. Confirming fraud red-flags the case, and the audit trail supports reporting |
+| Draft SOP on suspected money-mule accounts | **Draft** (comments due 2 Oct 2026, proposed 1 Apr 2027) | See below |
+| Draft compensation framework for digital banking fraud | **Draft** (Mar 2026, proposed 1 Jul 2026) | See below |
+
+**Money-mule SOP clock** (Regulatory card on mule alerts):
+- immediate debit hold for amounts ≥ ₹1,000;
+- customer explanation due in 20 days;
+- bank decides within 10 days of the reply, or 30 days if there's no reply;
+- the hold must end within 60 days;
+- ring alerts point the analyst to report the *external* beneficiary.
+
+**Compensation estimate** (Regulatory card on victim alerts): losses up to ₹50k get min(85%, ₹25,000), once per lifetime, if reported within 5 days. The card shows the reporting deadline.
+
 ## Roadmap (not built)
 - **P5 Rule intelligence:** threshold backtesting, shadow-mode rules, versioned rollouts.
 - **P6+ Trained models:** analyst decisions become labels, then XGBoost/LightGBM, then champion/challenger against today's detectors. Also sequence models ("fraud journey") and graph ML.
 - **Fraud intelligence graph:** customer ↔ device ↔ beneficiary ↔ account ↔ case.
 - **External intelligence:** DoT Financial Fraud Risk Indicator, I4C Suspect Registry, consortium signals.
-- **Pre-transaction intervention:** ALLOW / STEP-UP / HOLD / REVIEW before money leaves the account.
+- **Pre-transaction v2:** device and login events (SIM change, MFA reset), an FRI or mobile-number risk lookup, and a streaming feature store for sub-10 ms at scale.
 - **P7 Scale:** event streaming, feature store, model serving.
 
 ## Security model
@@ -195,6 +257,7 @@ The fraudster changes the story; the money trail reveals the pattern. Three expl
 1. **CSP uses `'unsafe-inline'` for scripts.** Next.js needs this for its inline bootstrap when nonces aren't used. A nonce-based CSP would force every page to render dynamically. This is acceptable for the prototype; switch to nonces for production.
 2. **Login rate limiter is in-memory**, so it only works per instance. Use Redis or Upstash when running multiple instances. Supabase Auth has its own server-side limits as a backstop.
 3. **AI Pipe free tier is about $0.10/week.** AI summaries are cached per alert, and the app falls back to a template summary when the LLM is unavailable (`LLM_PROVIDER=none` also works).
+14. **Draft RBI rules are labelled DRAFT in the UI.** They're shown as decision support, not legal advice. Re-check the figures when RBI publishes the final versions.
 12. **Run migration `…050000_detector_models.sql` and click Run detection once** to populate the model scores. The queue shows "—" until you do.
 13. **The behaviour model is noisy on purpose** (57% precision on demo data). That's why models are advisory and the analyst decides.
 7. **Re-running detection with a new ruleset doesn't update existing alerts.** This is on purpose, so an alert stays tied to the rules that raised it. `risk_assessments` always reflects the latest run.

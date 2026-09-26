@@ -5,6 +5,7 @@ import { AppHeader } from "@/components/app-header";
 import { DecisionPanel } from "@/components/decision-panel";
 import { DecisionReplay } from "@/components/decision-replay";
 import { DetectorsCard } from "@/components/detectors-card";
+import { RegulatoryCard } from "@/components/regulatory-card";
 import { NetworkGraph } from "@/components/network-graph";
 import { ACTION_LABELS } from "@/lib/ai/schema";
 import { availableDecisions } from "@/lib/decisions";
@@ -12,6 +13,7 @@ import { loadInvestigation } from "@/lib/investigation";
 import { loadCase } from "@/lib/ai/case-data";
 import { buildCaseContext, Pseudonymizer } from "@/lib/ai/minimize";
 import { isSupervisor, requireStaff } from "@/lib/auth";
+import { requestTime } from "@/lib/clock";
 import { createClient } from "@/lib/supabase/server";
 
 const inr = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
@@ -47,6 +49,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
   const view = await loadCase(db, id);
   if (!view) notFound();
   const investigation = await loadInvestigation(db, view, viewer.id);
+  const now = requestTime();
   const availability = availableDecisions(view.status, {
     isSupervisor: isSupervisor(viewer.role),
     assignedTo: view.assignedTo,
@@ -131,6 +134,17 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
               aiSuggestion={aiAction}
             />
             <AiSummaryPanel alertId={input.alert.id} initial={view.aiRecord} />
+            <RegulatoryCard
+              reasonCodes={input.alert.reasonCodes}
+              amount={t.amount}
+              direction={t.direction}
+              occurredAt={t.occurredAt}
+              holdStart={(() => {
+                const s = investigation.trail.find((x) => x.label === "escalated" || x.label === "confirmed as fraud");
+                return s ? Date.parse(s.at) : null;
+              })()}
+              now={now}
+            />
             {legend.length > 0 && (
               <details className="rounded border border-neutral-200 p-3 text-xs">
                 <summary className="cursor-pointer text-neutral-600">Pseudonym legend (not shared with the AI)</summary>
