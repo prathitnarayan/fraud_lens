@@ -145,9 +145,35 @@ P2 alert (score, severity, reason codes, evidence) + customer baseline + recent 
   - no hard-coded keys.
 - **CI** (`.github/workflows/ci.yml`): typecheck, lint with zero warnings, 174 tests, eval, build, `npm audit`.
 
+## Detector models (P6) — advisory ensemble beside the rules
+The fraudster changes the story; the money trail reveals the pattern. Three explainable models run in the same point-in-time pass as the rules (all four together take about 220 ms for 5,000 transactions):
+
+| Model | Question it answers | Signals | Catches |
+|---|---|---|---|
+| **Behaviour** | How unusual is this for *this customer*? | amount (robust z-score), device, city, first payee, hour, channel, velocity | account takeover, SIM swap |
+| **Beneficiary** | How suspicious is *where the money goes*? | distinct senders 24h/ever, volume received, bank-wide novelty | authorised scams (digital arrest, investment, fake KYC) |
+| **Network** | Is this account moving money like a mule? | pass-through ratio, sender diversity, new recipients, time to outflow | mule accounts, one-victim → many-accounts scams |
+
+- **Scoring and explanations.** Each model combines its factors with a noisy-OR, so every point of the 0–100 score comes from a named factor. The factor text is safe to send to the LLM.
+- **Agreement.** The rules plus the three models give HIGH (2 or more flag), MIXED (1) or LOW (0).
+- **Model-only candidates.** These are cases the rules scored below the alert line but a model flagged. They're listed on `/metrics`.
+- **Advisory by design.** The models never change `risk_score` or create alerts. Tests show the rules output is identical with and without them, and the alert count matches the rules exactly. Promoting a model from shadow to active is a roadmap step.
+- **Proof the models add something.** In a test built from the research ("one victim pays 10 new accounts", as in matrimonial or gift scams), the rules raise nothing and the network model flags it.
+- **Swap-ready.** v1 is statistical. The same slot takes Isolation Forest, XGBoost or a GNN later without changing the pipeline, storage or UI.
+
+`npm run eval` (seed 20260926):
+- behaviour: 51 flagged, 57% planted fraud (noisiest, which is why it's advisory);
+- beneficiary: 10/10;
+- network: 11/11;
+- agreement on alerts: 40 HIGH, 75 MIXED;
+- 22 model-only candidates.
+
 ## Roadmap (not built)
 - **P5 Rule intelligence:** threshold backtesting, shadow-mode rules, versioned rollouts.
-- **P6 Adaptive:** statistical anomaly and graph features, then ML scoring alongside the rules.
+- **P6+ Trained models:** analyst decisions become labels, then XGBoost/LightGBM, then champion/challenger against today's detectors. Also sequence models ("fraud journey") and graph ML.
+- **Fraud intelligence graph:** customer ↔ device ↔ beneficiary ↔ account ↔ case.
+- **External intelligence:** DoT Financial Fraud Risk Indicator, I4C Suspect Registry, consortium signals.
+- **Pre-transaction intervention:** ALLOW / STEP-UP / HOLD / REVIEW before money leaves the account.
 - **P7 Scale:** event streaming, feature store, model serving.
 
 ## Security model
@@ -169,6 +195,8 @@ P2 alert (score, severity, reason codes, evidence) + customer baseline + recent 
 1. **CSP uses `'unsafe-inline'` for scripts.** Next.js needs this for its inline bootstrap when nonces aren't used. A nonce-based CSP would force every page to render dynamically. This is acceptable for the prototype; switch to nonces for production.
 2. **Login rate limiter is in-memory**, so it only works per instance. Use Redis or Upstash when running multiple instances. Supabase Auth has its own server-side limits as a backstop.
 3. **AI Pipe free tier is about $0.10/week.** AI summaries are cached per alert, and the app falls back to a template summary when the LLM is unavailable (`LLM_PROVIDER=none` also works).
+12. **Run migration `…050000_detector_models.sql` and click Run detection once** to populate the model scores. The queue shows "—" until you do.
+13. **The behaviour model is noisy on purpose** (57% precision on demo data). That's why models are advisory and the analyst decides.
 7. **Re-running detection with a new ruleset doesn't update existing alerts.** This is on purpose, so an alert stays tied to the rules that raised it. `risk_assessments` always reflects the latest run.
 8. **No streaming.** The summary returns as one JSON object, typically 2–4s on nano, with a skeleton loader while waiting. Streaming the narrative would need an unvalidated text stream, which conflicts with schema validation, so it was skipped on purpose.
 9. **Grounding only checks the cited reason codes.** A model could still phrase a number wrongly inside the narrative. The rules-engine evidence is always shown next to the summary so the analyst can cross-check.

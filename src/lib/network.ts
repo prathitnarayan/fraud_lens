@@ -1,7 +1,8 @@
 export type NetTxn = { id: string; customerId: string; customerRef: string; amount: number; direction: string; counterparty: string; merchantCategory: string | null; occurredAt: number };
 
 export type NetNode = { id: string; label: string; kind: "customer" | "external" | "center"; highlight: boolean };
-export type NetEdge = { from: string; to: string; amount: number; count: number; highlight: boolean };
+export type EdgeTxn = { id: string; amount: number; occurredAt: number };
+export type NetEdge = { from: string; to: string; amount: number; count: number; highlight: boolean; txns: EdgeTxn[] };
 export type Network = { mode: "fan_in" | "pass_through"; title: string; left: NetNode[]; center: NetNode; right: NetNode[]; edges: NetEdge[] };
 
 const WINDOW = 24 * 3600_000;
@@ -21,9 +22,10 @@ export function buildNetwork(
 
   if (mode === "fan_in") {
     const payments = inWindow.filter((t) => t.direction === "debit" && t.counterparty === alertTxn.counterparty);
-    const byCustomer = new Map<string, { ref: string; amount: number; count: number; hasAlert: boolean }>();
+    const byCustomer = new Map<string, { ref: string; amount: number; count: number; hasAlert: boolean; txns: EdgeTxn[] }>();
     for (const t of payments) {
-      const e = byCustomer.get(t.customerId) ?? { ref: t.customerRef, amount: 0, count: 0, hasAlert: false };
+      const e = byCustomer.get(t.customerId) ?? { ref: t.customerRef, amount: 0, count: 0, hasAlert: false, txns: [] };
+      e.txns.push({ id: t.id, amount: t.amount, occurredAt: t.occurredAt });
       e.amount += t.amount;
       e.count++;
       e.hasAlert ||= t.id === alertTxn.id;
@@ -42,16 +44,17 @@ export function buildNetwork(
       right: [],
       edges: left.map((n) => {
         const e = byCustomer.get(n.id)!;
-        return { from: n.id, to: "center", amount: Math.round(e.amount), count: e.count, highlight: e.hasAlert };
+        return { from: n.id, to: "center", amount: Math.round(e.amount), count: e.count, highlight: e.hasAlert, txns: e.txns };
       }),
     };
   }
 
   const own = inWindow.filter((t) => t.customerId === alertTxn.customerId);
   const agg = (dir: "credit" | "debit") => {
-    const m = new Map<string, { amount: number; count: number; hasAlert: boolean }>();
+    const m = new Map<string, { amount: number; count: number; hasAlert: boolean; txns: EdgeTxn[] }>();
     for (const t of own.filter((x) => x.direction === dir)) {
-      const e = m.get(t.counterparty) ?? { amount: 0, count: 0, hasAlert: false };
+      const e = m.get(t.counterparty) ?? { amount: 0, count: 0, hasAlert: false, txns: [] };
+      e.txns.push({ id: t.id, amount: t.amount, occurredAt: t.occurredAt });
       e.amount += t.amount;
       e.count++;
       e.hasAlert ||= t.id === alertTxn.id;
@@ -77,11 +80,11 @@ export function buildNetwork(
     edges: [
       ...left.map((n) => {
         const e = senders.get(n.label)!;
-        return { from: n.id, to: "center", amount: Math.round(e.amount), count: e.count, highlight: e.hasAlert };
+        return { from: n.id, to: "center", amount: Math.round(e.amount), count: e.count, highlight: e.hasAlert, txns: e.txns };
       }),
       ...right.map((n) => {
         const e = recipients.get(n.label)!;
-        return { from: "center", to: n.id, amount: Math.round(e.amount), count: e.count, highlight: e.hasAlert };
+        return { from: "center", to: n.id, amount: Math.round(e.amount), count: e.count, highlight: e.hasAlert, txns: e.txns };
       }),
     ],
   };

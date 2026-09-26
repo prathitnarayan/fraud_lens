@@ -21,6 +21,14 @@ export function parseTab(v: string | string[] | undefined): QueueTab {
 }
 
 
+type ModelCols = { behaviour_score: number | null; beneficiary_score: number | null; network_score: number | null; agreement: string | null };
+
+/** PostgREST may return a one-to-one embed as an object or a 1-element array. */
+export function modelColsOf(r: QueueRow): ModelCols | null {
+  const v = r.transactions?.risk_assessments;
+  return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+}
+
 export type QueueRow = {
   id: string;
   risk_score: number;
@@ -30,7 +38,10 @@ export type QueueRow = {
   evidence: EvidenceItem[];
   status: string;
   created_at: string;
-  transactions: { amount: number; channel: string; direction: string; counterparty: string; city: string; occurred_at: string } | null;
+  transactions: {
+    amount: number; channel: string; direction: string; counterparty: string; city: string; occurred_at: string;
+    risk_assessments: ModelCols | ModelCols[] | null;
+  } | null;
   customers: { full_name: string; account_masked: string; external_ref: string } | null;
 };
 
@@ -40,7 +51,7 @@ export async function loadQueue(db: SupabaseClient, tab: QueueTab): Promise<Queu
     .from("alerts")
     .select(
       "id, risk_score, priority, severity, reason_codes, evidence, status, created_at, " +
-        "transactions(amount, channel, direction, counterparty, city, occurred_at), " +
+        "transactions(amount, channel, direction, counterparty, city, occurred_at, risk_assessments(behaviour_score, beneficiary_score, network_score, agreement)), " +
         "customers(full_name, account_masked, external_ref)",
     )
     .in("status", [...QUEUE_TABS[tab]])

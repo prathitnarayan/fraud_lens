@@ -3,7 +3,7 @@ import { AppHeader } from "@/components/app-header";
 import { LiveRefresh } from "@/components/live-refresh";
 import { RunDetectionButton } from "@/components/run-detection-button";
 import { isSupervisor, requireStaff } from "@/lib/auth";
-import { loadCounts, loadEvaluation, loadQueue, parseTab, QUEUE_TABS, type QueueRow, type QueueTab } from "@/lib/queue";
+import { loadCounts, loadEvaluation, loadQueue, modelColsOf, parseTab, QUEUE_TABS, type QueueRow, type QueueTab } from "@/lib/queue";
 import { createClient } from "@/lib/supabase/server";
 
 const TAB_LABELS: Record<QueueTab, string> = {
@@ -100,6 +100,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
                   <th className="py-2 pr-3">Channel · City</th>
                   <th className="py-2 pr-3">When (IST)</th>
                   <th className="py-2 pr-3">Why flagged</th>
+                  <th className="py-2 pr-3" title="Advisory models: Behaviour · Beneficiary · Network">Models</th>
                   <th className="py-2">Status</th>
                 </tr>
               </thead>
@@ -153,6 +154,21 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
                           ))}
                         </ul>
                       </details>
+                    </td>
+                    <td className="py-2 pr-3 text-xs">
+                      {(() => {
+                        const m = modelColsOf(r);
+                        if (!m?.agreement) return <span className="text-neutral-400">—</span>;
+                        const s = (v: number | null) => (v === null ? "–" : v);
+                        return (
+                          <>
+                            <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${m.agreement === "HIGH" ? "bg-neutral-900 text-white" : "border border-neutral-400"}`}>{m.agreement}</span>
+                            <div className="mt-1 whitespace-nowrap font-mono text-[11px] text-neutral-500" title="Behaviour · Beneficiary · Network">
+                              B{s(m.behaviour_score)} · Be{s(m.beneficiary_score)} · N{s(m.network_score)}
+                            </div>
+                          </>
+                        );
+                      })()}
                     </td>
                     <td className="py-2 text-xs">{r.status.replace("_", " ")}</td>
                   </tr>

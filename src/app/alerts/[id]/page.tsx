@@ -4,6 +4,7 @@ import { AiSummaryPanel } from "@/components/ai-summary-panel";
 import { AppHeader } from "@/components/app-header";
 import { DecisionPanel } from "@/components/decision-panel";
 import { DecisionReplay } from "@/components/decision-replay";
+import { DetectorsCard } from "@/components/detectors-card";
 import { NetworkGraph } from "@/components/network-graph";
 import { ACTION_LABELS } from "@/lib/ai/schema";
 import { availableDecisions } from "@/lib/decisions";
@@ -80,6 +81,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
 
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-4">
+            <DetectorsCard ruleScore={input.alert.riskScore} models={input.models} />
             <Card title="Why it was flagged" subtitle={`Rules engine · deterministic · ruleset ${view.rulesetVersion ?? "—"}`}>
               <ul className="space-y-2 text-sm">
                 {input.alert.evidence.map((e) => (

@@ -58,7 +58,24 @@ export function NetworkGraph({ net }: { net: Network }) {
           {[...net.left, net.center, ...net.right].map(box)}
         </svg>
       </div>
-      <p className="mt-1 text-xs text-neutral-500">Bold line = the alerted transaction. {net.mode === "fan_in" ? "Left: our customers · Right: shared beneficiary" : "Left: senders · Centre: this customer · Right: recipients"}</p>
+      <div className="mt-2 grid gap-1 sm:grid-cols-2">
+        {net.edges.map((e) => {
+          const label = (id: string) => (id === "center" ? net.center.label : ([...net.left, ...net.right].find((n) => n.id === id)?.label ?? id));
+          return (
+            <details key={`${e.from}-${e.to}-list`} className="rounded border border-neutral-100 px-2 py-1 text-xs">
+              <summary className={`cursor-pointer truncate ${e.highlight ? "font-semibold" : ""}`}>
+                {trunc(label(e.from), 22)} → {trunc(label(e.to), 22)} · {inr(e.amount)}
+              </summary>
+              <ul className="mt-1 space-y-0.5 font-mono text-[11px] text-neutral-600">
+                {[...e.txns].sort((a, b) => a.occurredAt - b.occurredAt).map((t) => (
+                  <li key={t.id}>{new Date(t.occurredAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} · {inr(Math.round(t.amount))}</li>
+                ))}
+              </ul>
+            </details>
+          );
+        })}
+      </div>
+      <p className="mt-1 text-xs text-neutral-500">Click a flow to see its transactions. Bold line = the alerted transaction. {net.mode === "fan_in" ? "Left: our customers · Right: shared beneficiary" : "Left: senders · Centre: this customer · Right: recipients"}</p>
     </figure>
   );
 }

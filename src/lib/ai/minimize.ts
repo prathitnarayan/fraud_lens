@@ -24,6 +24,14 @@ export type CaseInput = {
   } | null;
   /** Customer's transactions strictly before the alerted one, newest first. */
   history: CaseInput["txn"][];
+  /** Advisory detector models (P6), if scored. Factor texts contain no identifiers. */
+  models?: CaseModels | null;
+};
+
+export type CaseModels = {
+  agreement: string | null;
+  scores: { behaviour: number | null; beneficiary: number | null; network: number | null };
+  factors: Record<string, { applicable: boolean; factors: { key: string; text: string }[] }>;
 };
 
 /** What the model sees: amounts, cities, times, categories and pseudonyms — no identifiers. */
@@ -48,6 +56,13 @@ export type CaseContext = {
     median_debit_inr: number | null;
     device_seen_before: boolean | null;
     device_age_minutes: number | null;
+  };
+  detectors?: {
+    rules_score: number;
+    agreement: string | null;
+    behaviour: { score: number | null; top_reasons: string[] };
+    beneficiary: { score: number | null; top_reasons: string[] };
+    network: { score: number | null; top_reasons: string[] };
   };
   recent_activity: {
     minutes_before: number;
@@ -140,7 +155,18 @@ export function buildCaseContext(input: CaseInput, p: Pseudonymizer = new Pseudo
   // Evidence may mention handles/devices — scrub after all pseudonyms are registered.
   const evidence = input.alert.evidence.map((e) => ({ code: e.code, weight: e.weight, text: p.scrub(e.text) }));
   const f = input.features;
+  const reasons = (k: string) => (input.models?.factors?.[k]?.factors ?? []).slice(0, 3).map((x) => p.scrub(x.text));
+  const detectors = input.models
+    ? {
+        rules_score: input.alert.riskScore,
+        agreement: input.models.agreement,
+        behaviour: { score: input.models.scores.behaviour, top_reasons: reasons("behaviour") },
+        beneficiary: { score: input.models.scores.beneficiary, top_reasons: reasons("beneficiary") },
+        network: { score: input.models.scores.network, top_reasons: reasons("network") },
+      }
+    : undefined;
   return {
+    ...(detectors ? { detectors } : {}),
     alert: { risk_score: input.alert.riskScore, severity: input.alert.severity, reason_codes: [...input.alert.reasonCodes], evidence },
     transaction,
     customer_baseline: {

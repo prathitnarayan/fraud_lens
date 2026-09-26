@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { EvidenceItem } from "@/lib/queue-types";
-import type { CaseInput } from "./minimize";
+import type { CaseInput, CaseModels } from "./minimize";
 import { AiSummaryRecordSchema, type AiSummaryRecord } from "./schema";
 
 export const AlertIdSchema = z.uuid();
@@ -58,7 +58,7 @@ export async function loadCase(db: SupabaseClient, alertId: string): Promise<Cas
   const txn = toTxn(row.transactions);
 
   const [{ data: assessment }, { data: history, error: hErr }] = await Promise.all([
-    db.from("risk_assessments").select("features").eq("transaction_id", txn.id).maybeSingle(),
+    db.from("risk_assessments").select("features, behaviour_score, beneficiary_score, network_score, agreement, model_factors").eq("transaction_id", txn.id).maybeSingle(),
     db
       .from("transactions")
       .select("id, amount, channel, direction, counterparty, merchant_category, city, device_id, occurred_at")
@@ -85,6 +85,13 @@ export async function loadCase(db: SupabaseClient, alertId: string): Promise<Cas
       },
       features: (assessment?.features as CaseInput["features"]) ?? null,
       history: ((history ?? []) as TxnRow[]).map(toTxn),
+      models: assessment && assessment.agreement
+        ? {
+            agreement: assessment.agreement as string,
+            scores: { behaviour: assessment.behaviour_score as number | null, beneficiary: assessment.beneficiary_score as number | null, network: assessment.network_score as number | null },
+            factors: (assessment.model_factors ?? {}) as CaseModels["factors"],
+          }
+        : null,
     },
     status: row.status,
     resolutionNote: row.resolution_note,

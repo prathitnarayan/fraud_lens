@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { scoreModels, type ModelScores } from "@/lib/models";
 import { assessTransactions } from "./engine";
 import { RULESET_VERSION } from "./rules";
 import type { Assessment, TxnInput } from "./types";
@@ -35,8 +36,18 @@ export function rowToTxn(r: TxnRow): TxnInput {
 }
 
 /** JSON rows for public.apply_risk_assessments. Evidence keeps code/weight/text; features are kept whole. */
-export function toApplyRows(assessments: Assessment[]) {
-  return assessments.map((a) => ({
+const factorsOf = (m: ModelScores) =>
+  Object.fromEntries(
+    (["behaviour", "beneficiary", "network"] as const).map((k) => [
+      k,
+      { applicable: m[k].applicable, factors: m[k].factors.slice(0, 5).map(({ key, strength, weight, text }) => ({ key, strength: Math.round(strength * 100) / 100, weight, text })) },
+    ]),
+  );
+
+export function toApplyRows(assessments: Assessment[], models?: Map<string, ModelScores>) {
+  return assessments.map((a) => {
+    const m = models?.get(a.transactionId);
+    return {
     transaction_id: a.transactionId,
     customer_id: a.customerId,
     score: a.score,
@@ -53,7 +64,26 @@ export function toApplyRows(assessments: Assessment[]) {
     })),
     features: a.features,
     ruleset_version: a.rulesetVersion,
-  }));
+    ...(m
+      ? {
+          behaviour_score: m.behaviour.score,
+          beneficiary_score: m.beneficiary.applicable ? m.beneficiary.score : null,
+          network_score: m.network.score,
+          agreement: m.agreement,
+          model_only: m.modelOnly,
+          model_factors: factorsOf(m),
+          model_version: m.version,
+        }
+      : {}),
+    };
+  });
+}
+
+/** Rules first (authoritative), then advisory models scored against the same transactions. */
+export function assessAll(txns: TxnInput[]) {
+  const assessments = assessTransactions(txns);
+  const models = scoreModels(txns, new Map(assessments.map((a) => [a.transactionId, a.score])));
+  return { assessments, models };
 }
 
 const PAGE = 1000;
@@ -92,9 +122,9 @@ export type RunSummary = { evaluated: number; assessed: number; alertsCreated: n
 export async function runDetection(db: SupabaseClient): Promise<RunSummary> {
   const txns = await loadTransactions(db);
   const started = performance.now();
-  const assessments = assessTransactions(txns);
+  const { assessments, models } = assessAll(txns);
   const engineMs = Math.round(performance.now() - started);
-  const rows = toApplyRows(assessments);
+  const rows = toApplyRows(assessments, models);
 
   let assessed = 0;
   let alertsCreated = 0;

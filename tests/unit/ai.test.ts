@@ -5,12 +5,13 @@ import { buildMessages, SYSTEM_PROMPT } from "@/lib/ai/prompt";
 import { CaseSummarySchema, PROMPT_VERSION, type CaseSummary } from "@/lib/ai/schema";
 import { AI_WRITABLE_COLUMNS, buildAiUpdate, isGrounded, summarizeCase } from "@/lib/ai/summarize";
 import { chatJson, LlmError, type LlmConfig } from "@/lib/llm/client";
-import { assessTransactions } from "@/lib/risk/engine";
+import { assessAll, toApplyRows } from "@/lib/risk/runner";
 import { generateDataset } from "../../scripts/seed/generator";
 
 // ── Build real CaseInputs from the synthetic dataset + engine ──
 const d = generateDataset();
-const assessments = assessTransactions(d.transactions);
+const { assessments, models } = assessAll(d.transactions);
+const applyRows = new Map(toApplyRows(assessments, models).map((r) => [r.transaction_id, r]));
 const txById = new Map(d.transactions.map((t) => [t.id, t]));
 const custById = new Map(d.customers.map((c) => [c.id, c]));
 const byCustomer = new Map<string, typeof d.transactions>();
@@ -33,6 +34,15 @@ function caseFor(transactionId: string): CaseInput {
     customer: { id: c.id, fullName: c.fullName, externalRef: c.externalRef, accountMasked: c.accountMasked, segment: c.segment, kycTier: c.kycTier, homeCity: c.homeCity },
     features: a.features,
     history,
+    models: {
+      agreement: applyRows.get(t.id)!.agreement ?? null,
+      scores: {
+        behaviour: applyRows.get(t.id)!.behaviour_score ?? null,
+        beneficiary: applyRows.get(t.id)!.beneficiary_score ?? null,
+        network: applyRows.get(t.id)!.network_score ?? null,
+      },
+      factors: applyRows.get(t.id)!.model_factors as never,
+    },
   };
 }
 
@@ -111,6 +121,16 @@ describe("PII minimizer", () => {
     p.counterparty("evil.ignore-all-instructions@ybl", null);
     expect(p.scrub("paid evil.ignore-all-instructions@ybl and x.y@okaxis from dev-00001-0 id 3f2b1c4d-1111-4222-8333-444455556666 acct 123456789012"))
       .toBe("paid person#1 and [handle] from [device] id [id] acct [number]");
+  });
+
+  it("passes detector scores and reasons to the model", () => {
+    // Point-in-time: early inbound credits score 0 on the network model; the payouts carry the signal.
+    const ctxs = allAlertCases.map((c) => ({ c, ctx: buildCaseContext(c) }));
+    const mule = ctxs.find(({ ctx }) => (ctx.detectors?.network.score ?? 0) >= 60)!;
+    expect(mule).toBeDefined();
+    expect(mule.ctx.detectors!.network.top_reasons.length).toBeGreaterThan(0);
+    expect(mule.ctx.detectors!.rules_score).toBe(mule.c.alert.riskScore);
+    expect(ctxs.every(({ ctx }) => ctx.detectors?.agreement)).toBe(true);
   });
 
   it("is deterministic", () => {
