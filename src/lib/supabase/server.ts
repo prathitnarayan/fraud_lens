@@ -5,8 +5,10 @@ import { getPublicEnv } from "@/lib/env";
 
 /** Per-request client acting as the signed-in user. RLS applies. */
 export async function createClient() {
-  const { supabaseUrl, supabaseKey } = getPublicEnv();
+  // cookies() first: marks the route dynamic so it is never prerendered at build time
+  // (env is only required at request time, not during `next build`).
   const cookieStore = await cookies();
+  const { supabaseUrl, supabaseKey } = getPublicEnv();
   return createServerClient(supabaseUrl, supabaseKey, {
     cookies: {
       getAll: () => cookieStore.getAll(),

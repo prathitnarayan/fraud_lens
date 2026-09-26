@@ -11,7 +11,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "npm run typecheck && npm run lint && npm run test",
-    "seed": "tsx scripts/seed/seed.ts"
+    "seed": "tsx scripts/seed/seed.ts",
+    "eval": "tsx scripts/risk/eval.ts",
+    "risk": "tsx --env-file=.env.local scripts/risk/run.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
